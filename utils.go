@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/user"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -76,7 +77,7 @@ func RevBubbleSort(arr []string) {
 	}
 }
 
-//* parsing Binary permissions
+// * parsing Binary permissions
 func GetFilePermissions(path string) (string, error) {
 	// Get file info
 	fileInfo, err := os.Stat(path)
@@ -121,7 +122,7 @@ func GetFilePermissions(path string) (string, error) {
 	}
 }
 
-//* syscall to get hard link numbers
+// * syscall to get hard link numbers
 func GetHardLinkNum(path string) (string, error) {
 	fcount := uint16(0)
 
@@ -179,22 +180,28 @@ func lookupGroupById(gid uint32) (string, error) {
 }
 
 func GetBlockCount(directoryPath string) (int64, error) {
-	// Open the directory
-	dir, err := os.Open(directoryPath)
-	if err != nil {
-		return 0, err
-	}
-	defer dir.Close()
+    const blockSize = 4096  // Assuming a common block size of 4096 bytes
+    var totalSize int64
 
-	// Get the directory file information
-	dirInfo, err := dir.Stat()
-	if err != nil {
-		return 0, err
-	}
+    err := filepath.Walk(directoryPath, func(path string, info os.FileInfo, err error) error {
+        if err != nil {
+            return err
+        }
+        if !info.IsDir() {
+            // Calculate the number of blocks occupied by the file, rounding up
+            fileBlocks := (info.Size() + blockSize - 1) / blockSize
+            totalSize += fileBlocks * blockSize
+        }
+        return nil
+    })
 
-	// Get the underlying syscall.Stat_t structure
-	stat := dirInfo.Sys().(*syscall.Stat_t)
+    if err != nil {
+        log.Printf("Error walking through directory %s: %v\n", directoryPath, err)
+        return 0, err
+    }
 
-	// Return the block count
-	return stat.Blocks, nil
+    // Calculate the block count by dividing the total size by the block size
+    blockCount := totalSize / blockSize
+
+    return blockCount, nil
 }

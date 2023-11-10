@@ -28,6 +28,9 @@ func RecursiveSearchDir(filepath string) {
 		}
 		fileArray = append(fileArray, file.Name())
 	}
+	if DisplayHidden {
+		fileArray = append(fileArray, ".", "..")
+	}
 
 	//* sort the arrays and proceed
 	if !Timesort {
@@ -95,6 +98,9 @@ func NormalSearchDir(filepath string) {
 			log.Fatal(err)
 		}
 		fileArray = append(fileArray, file.Name())
+	}
+	if DisplayHidden {
+		fileArray = append(fileArray, ".", "..")
 	}
 
 	//* sort the arrays and proceed
