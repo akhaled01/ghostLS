@@ -2,10 +2,8 @@ package ghostls
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/user"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -23,7 +21,7 @@ func SortByCreationTime(initialdir string, filePaths []string, reverse bool) []s
 	for i, path := range filePaths {
 		fileInfo, err := os.Stat(initialdir + "/" + path)
 		if err != nil {
-			log.Fatal(err)
+			fmt.Println("ERROR:", err)
 		}
 
 		files[i] = File{
@@ -118,7 +116,7 @@ func GetFilePermissions(path string) (string, error) {
 	if dirbool {
 		return "d" + fmt.Sprintf("%s-%s-%s", ownerPermissions, groupPermissions, otherPermissions), nil
 	} else {
-		return fmt.Sprintf("%s-%s-%s", ownerPermissions, groupPermissions, otherPermissions), nil
+		return "-" + fmt.Sprintf("%s-%s-%s", ownerPermissions, groupPermissions, otherPermissions), nil
 	}
 }
 
@@ -180,28 +178,87 @@ func lookupGroupById(gid uint32) (string, error) {
 }
 
 func GetBlockCount(directoryPath string) (int64, error) {
-    const blockSize = 4096  // Assuming a common block size of 4096 bytes
-    var totalSize int64
+	// blockSize, err := GetFileSystemBlockSize(directoryPath)
+	// if err != nil {
+	// 	// Error getting the file system block size
+	// 	return 0, fmt.Errorf("error getting file system block size for %s: %w", directoryPath, err)
+	// }
+	const blockSize = 512
 
-    err := filepath.Walk(directoryPath, func(path string, info os.FileInfo, err error) error {
-        if err != nil {
-            return err
-        }
-        if !info.IsDir() {
-            // Calculate the number of blocks occupied by the file, rounding up
-            fileBlocks := (info.Size() + blockSize - 1) / blockSize
-            totalSize += fileBlocks * blockSize
-        }
-        return nil
-    })
+	var totalSize int64
+	files, err := os.ReadDir(directoryPath)
+	if err != nil {
+		// Error reading the directory
+		return 0, fmt.Errorf("error reading directory %s: %w", directoryPath, err)
+	}
 
-    if err != nil {
-        log.Printf("Error walking through directory %s: %v\n", directoryPath, err)
-        return 0, err
-    }
+	for _, file := range files {
+		fullPath := directoryPath
+		if !strings.HasSuffix(directoryPath, "/") {
+			fullPath += "/"
+		}
+		fullPath += file.Name()
 
-    // Calculate the block count by dividing the total size by the block size
-    blockCount := totalSize / blockSize
+		fileSize, err := GetFileSizeConsideringSymlink(fullPath)
+		if err != nil {
+			// Log the error and continue with the next file
+			fmt.Printf("error getting size for %s: %v\n", fullPath, err)
+			continue
+		}
 
-    return blockCount, nil
+		// fmt.Printf("File: %s, Size: %d\n", fullPath, fileSize)
+
+		// Round up the file size to the nearest block
+
+		// Inside the loop
+		fileBlocks := (fileSize + blockSize - 1) / blockSize
+		// fmt.Printf("File: %s, Size: %d, Blocks: %d\n", fullPath, fileSize, fileBlocks)
+		totalSize += fileBlocks
+	}
+
+	// The block count is the total size divided by the block size
+	blockCount := totalSize
+	return blockCount, nil
+}
+
+func GetFileSystemBlockSize(path string) (int64, error) {
+	var stat syscall.Statfs_t
+	err := syscall.Statfs(path, &stat)
+	if err != nil {
+		return 0, err
+	}
+	return int64(stat.Bsize), nil
+}
+
+func GetFileSizeConsideringSymlink(path string) (int64, error) {
+	fileInfo, err := os.Lstat(path)
+	if err != nil {
+		return 0, err
+	}
+
+	if fileInfo.Mode()&os.ModeSymlink != 0 {
+		// It's a symlink, attempt to get the file it points to
+		resolvedPath, err := os.Readlink(path)
+		if err != nil {
+			return 0, err
+		}
+
+		// If resolvedPath is not absolute, construct the full path manually
+		if !strings.HasPrefix(resolvedPath, "/") {
+			dir := path[:strings.LastIndex(path, "/")+1]
+			resolvedPath = dir + resolvedPath
+		}
+
+		resolvedFileInfo, err := os.Stat(resolvedPath)
+		if err != nil {
+			// If the target of the symlink does not exist, handle accordingly
+			// Option 1: Return the size of the symlink itself
+			return fileInfo.Size(), nil
+			// Option 2: Return zero size
+			// return 0, nil
+		}
+		return resolvedFileInfo.Size(), nil
+	}
+
+	return fileInfo.Size(), nil
 }
