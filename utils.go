@@ -123,7 +123,7 @@ func GetFilePermissions(path string) (string, error) {
 
 //* syscall to get hard link numbers
 func GetHardLinkNum(path string) (string, error) {
-	fcount := uint64(0)
+	fcount := uint16(0)
 
 	fileinfo, err := os.Stat(path)
 	if err != nil {
